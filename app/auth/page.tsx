@@ -1,12 +1,23 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/contexts/AuthContext';
 import { createClient } from '@/lib/supabase/client';
 
 export default function AuthPage() {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const [loading, setLoading] = useState(false);
+    const { user, loading: authLoading } = useAuth();
+    const router = useRouter();
     const supabase = createClient();
+
+    // Redirect to dashboard if already logged in
+    useEffect(() => {
+        if (!authLoading && user) {
+            router.push('/dashboard');
+        }
+    }, [user, authLoading, router]);
 
     const handleGoogleLogin = async () => {
         setLoading(true);

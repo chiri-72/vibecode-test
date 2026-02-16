@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
 
 export type AetherHeroProps = {
     /* ---------- Hero content ---------- */
@@ -108,6 +109,7 @@ export default function AetherHero({
     className = '',
     ariaLabel = 'Aurora hero background',
 }: AetherHeroProps) {
+    const { user } = useAuth();
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const glRef = useRef<WebGL2RenderingContext | null>(null);
     const programRef = useRef<WebGLProgram | null>(null);
@@ -501,7 +503,7 @@ export default function AetherHero({
                         >
                             {ctaLabel ? (
                                 <a
-                                    href={ctaHref}
+                                    href={user ? '/dashboard' : ctaHref}
                                     className="aurora-btn aurora-btn--primary"
                                     style={{
                                         padding: '12px 18px',

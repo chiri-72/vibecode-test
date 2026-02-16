@@ -9,12 +9,13 @@ export async function GET(request: Request) {
         const supabase = await createClient();
         const { error } = await supabase.auth.exchangeCodeForSession(code);
 
-        if (!error) {
-            // Redirect to home page after successful login
-            return NextResponse.redirect(origin);
+        if (error) {
+            console.error('Auth callback error:', error.message);
+            return NextResponse.redirect(`${origin}/auth?error=${encodeURIComponent(error.message)}`);
         }
+
+        return NextResponse.redirect(`${origin}/dashboard`);
     }
 
-    // Redirect to auth page with error
-    return NextResponse.redirect(`${origin}/auth?error=auth_failed`);
+    return NextResponse.redirect(`${origin}/auth?error=no_code`);
 }
