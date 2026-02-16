@@ -13,13 +13,24 @@ export default function Navbar() {
                     />
                 </a>
 
-                {/* Get Started Button */}
-                <a
-                    href="#get-started"
-                    className="inline-block px-6 py-2.5 rounded-[10px] bg-gradient-to-b from-white/[0.16] to-white/[0.08] text-white no-underline font-semibold text-[0.95rem] font-['Space_Grotesk',ui-sans-serif,system-ui,-apple-system] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.25),0_8px_24px_rgba(0,0,0,0.15)] backdrop-blur-md backdrop-saturate-[120%] transition-all duration-200 ease-in-out hover:bg-gradient-to-b hover:from-white/[0.22] hover:to-white/[0.12] hover:-translate-y-[1px] hover:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.3),0_12px_32px_rgba(0,0,0,0.2)]"
-                >
-                    Get Started
-                </a>
+                {/* Navigation Buttons */}
+                <div className="flex items-center gap-3">
+                    {/* Sign In Button */}
+                    <a
+                        href="/auth"
+                        className="inline-block px-6 py-2.5 rounded-[10px] bg-gradient-to-b from-white/[0.12] to-white/[0.06] text-white no-underline font-semibold text-[0.95rem] font-['Space_Grotesk',ui-sans-serif,system-ui,-apple-system] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.2),0_4px_16px_rgba(0,0,0,0.1)] backdrop-blur-md backdrop-saturate-[120%] transition-all duration-200 ease-in-out hover:bg-gradient-to-b hover:from-white/[0.18] hover:to-white/[0.1] hover:-translate-y-[1px] hover:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.25),0_8px_24px_rgba(0,0,0,0.15)]"
+                    >
+                        Sign In
+                    </a>
+
+                    {/* Get Started Button - Highlighted */}
+                    <a
+                        href="#get-started"
+                        className="inline-block px-6 py-2.5 rounded-[10px] bg-gradient-to-b from-[#22d3ee] to-[#0ea5e9] text-white no-underline font-semibold text-[0.95rem] font-['Space_Grotesk',ui-sans-serif,system-ui,-apple-system] shadow-[0_8px_24px_rgba(34,211,238,0.3),0_4px_12px_rgba(0,0,0,0.2)] transition-all duration-200 ease-in-out hover:from-[#06b6d4] hover:to-[#0284c7] hover:-translate-y-[1px] hover:shadow-[0_12px_32px_rgba(34,211,238,0.4),0_6px_16px_rgba(0,0,0,0.25)]"
+                    >
+                        Get Started
+                    </a>
+                </div>
             </div>
         </nav>
     );
