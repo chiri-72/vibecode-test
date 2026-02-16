@@ -1,8 +1,13 @@
+import AetherHero from "@/components/main/hero";
+import Navbar from "@/components/main/navbar";
+
 export default function Home() {
   return (
-    <main>
-      <h1>Chiriative</h1>
-      <div>hi, my name is chiri</div>
-    </main>
+    <>
+      <Navbar />
+      <main>
+        <AetherHero />
+      </main>
+    </>
   );
 }
