@@ -2,8 +2,9 @@
 
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter, useParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import type { ReactNode } from 'react';
 
 type Post = {
     id: string;
@@ -18,7 +19,113 @@ type Post = {
     status: string;
     created_at: string;
     updated_at: string;
+    thumbnail_url: string | null;
+    thumbnail_prompt: string | null;
+    thumbnail_style: string | null;
 };
+
+function renderInlineMarkdown(text: string): ReactNode[] {
+    const tokens = text.split(/(\[[^\]]+\]\([^)]+\)|\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*)/g);
+
+    return tokens.map((token, index) => {
+        if (!token) return null;
+
+        const linkMatch = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+        if (linkMatch) {
+            return (
+                <a
+                    key={`inline-link-${index}`}
+                    href={linkMatch[2]}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[#22d3ee] hover:text-[#67e8f9] underline underline-offset-2 break-all"
+                >
+                    {linkMatch[1]}
+                </a>
+            );
+        }
+
+        if (token.startsWith('**') && token.endsWith('**')) {
+            return <strong key={`inline-strong-${index}`} className="font-semibold text-white">{token.slice(2, -2)}</strong>;
+        }
+        if (token.startsWith('`') && token.endsWith('`')) {
+            return (
+                <code key={`inline-code-${index}`} className="px-1.5 py-0.5 rounded-md bg-black/30 border border-white/10 text-white/90 text-[0.95em]">
+                    {token.slice(1, -1)}
+                </code>
+            );
+        }
+        if (token.startsWith('*') && token.endsWith('*')) {
+            return <em key={`inline-em-${index}`} className="italic text-white/90">{token.slice(1, -1)}</em>;
+        }
+
+        return <span key={`inline-text-${index}`}>{token}</span>;
+    });
+}
+
+function renderMarkdown(content: string): ReactNode[] {
+    const blocks = content
+        .replace(/\r\n/g, '\n')
+        .split(/\n{2,}/)
+        .map((block) => block.trim())
+        .filter(Boolean);
+
+    return blocks.map((block, index) => {
+        const lines = block.split('\n').map((line) => line.trim()).filter(Boolean);
+        const numberedItems = lines
+            .map((line) => line.match(/^\d+\.\s+(.*)$/)?.[1] || null)
+            .filter((item): item is string => Boolean(item));
+        const bulletItems = lines
+            .map((line) => line.match(/^[-*]\s+(.*)$/)?.[1] || null)
+            .filter((item): item is string => Boolean(item));
+
+        if (block.startsWith('### ')) {
+            return (
+                <h3 key={`h3-${index}`} className="text-xl font-semibold text-white mt-2 mb-1">
+                    {renderInlineMarkdown(block.replace(/^###\s+/, ''))}
+                </h3>
+            );
+        }
+        if (block.startsWith('## ')) {
+            return (
+                <h2 key={`h2-${index}`} className="text-2xl font-bold text-white mt-3 mb-1">
+                    {renderInlineMarkdown(block.replace(/^##\s+/, ''))}
+                </h2>
+            );
+        }
+        if (block.startsWith('# ')) {
+            return (
+                <h1 key={`h1-${index}`} className="text-3xl font-bold text-white mt-4 mb-2">
+                    {renderInlineMarkdown(block.replace(/^#\s+/, ''))}
+                </h1>
+            );
+        }
+        if (numberedItems.length === lines.length && numberedItems.length > 0) {
+            return (
+                <ol key={`ol-${index}`} className="list-decimal pl-6 space-y-2 text-white/85">
+                    {numberedItems.map((item, itemIndex) => (
+                        <li key={`ol-item-${index}-${itemIndex}`}>{renderInlineMarkdown(item)}</li>
+                    ))}
+                </ol>
+            );
+        }
+        if (bulletItems.length === lines.length && bulletItems.length > 0) {
+            return (
+                <ul key={`ul-${index}`} className="list-disc pl-6 space-y-2 text-white/85">
+                    {bulletItems.map((item, itemIndex) => (
+                        <li key={`ul-item-${index}-${itemIndex}`}>{renderInlineMarkdown(item)}</li>
+                    ))}
+                </ul>
+            );
+        }
+
+        return (
+            <p key={`p-${index}`} className="text-white/85 leading-[1.9]">
+                {renderInlineMarkdown(lines.join(' '))}
+            </p>
+        );
+    });
+}
 
 export default function PostDetailPage() {
     const { user, loading: authLoading } = useAuth();
@@ -28,8 +135,11 @@ export default function PostDetailPage() {
 
     const [post, setPost] = useState<Post | null>(null);
     const [loading, setLoading] = useState(true);
-    const [generating, setGenerating] = useState(false);
-    const [error, setError] = useState<string | null>(null);
+    const [generatingText, setGeneratingText] = useState(false);
+    const [generatingThumbnail, setGeneratingThumbnail] = useState(false);
+    const [textError, setTextError] = useState<string | null>(null);
+    const [thumbnailError, setThumbnailError] = useState<string | null>(null);
+    const autoThumbnailAttemptedRef = useRef<Record<string, boolean>>({});
     const supabase = createClient();
 
     useEffect(() => {
@@ -48,9 +158,18 @@ export default function PostDetailPage() {
                 .eq('id', postId)
                 .single();
 
-            if (error || !data) {
-                console.error('Post fetch error:', error?.message);
-                router.push('/dashboard');
+
+            if (error) {
+                console.error('Post fetch error:', error.message, error.details, error.hint);
+                setTextError(`Post load failed: ${error.message}`);
+                setLoading(false);
+                return;
+            }
+
+            if (!data) {
+                console.error('Post not found');
+                setTextError('Post not found');
+                setLoading(false);
                 return;
             }
 
@@ -59,7 +178,7 @@ export default function PostDetailPage() {
 
             // 이미 generating 상태면 폴링 시작
             if (data.status === 'generating') {
-                setGenerating(true);
+                setGeneratingText(true);
             }
         };
 
@@ -68,7 +187,7 @@ export default function PostDetailPage() {
 
     // generating 상태일 때 폴링으로 완료 확인
     useEffect(() => {
-        if (!generating || !postId) return;
+        if (!generatingText || !postId) return;
 
         const interval = setInterval(async () => {
             const { data } = await supabase
@@ -79,17 +198,29 @@ export default function PostDetailPage() {
 
             if (data && data.status !== 'generating') {
                 setPost(data as Post);
-                setGenerating(false);
+                setGeneratingText(false);
             }
         }, 2000);
 
         return () => clearInterval(interval);
-    }, [generating, postId]);
+    }, [generatingText, postId]);
 
-    const handleGenerate = async () => {
+    const refreshPost = useCallback(async (id: string) => {
+        const { data } = await supabase
+            .from('posts')
+            .select('*')
+            .eq('id', id)
+            .single();
+
+        if (data) {
+            setPost(data as Post);
+        }
+    }, [supabase]);
+
+    const handleGenerateText = async () => {
         if (!post) return;
-        setGenerating(true);
-        setError(null);
+        setGeneratingText(true);
+        setTextError(null);
         setPost({ ...post, status: 'generating' });
 
         try {
@@ -105,24 +236,54 @@ export default function PostDetailPage() {
                 throw new Error(result.error || 'Generation failed');
             }
 
-            // 생성 완료 후 데이터 다시 불러오기
-            const { data } = await supabase
-                .from('posts')
-                .select('*')
-                .eq('id', post.id)
-                .single();
-
-            if (data) {
-                setPost(data as Post);
-            }
+            await refreshPost(post.id);
         } catch (err) {
             const message = err instanceof Error ? err.message : 'Generation failed';
-            setError(message);
+            setTextError(message);
             setPost({ ...post, status: 'draft' });
         } finally {
-            setGenerating(false);
+            setGeneratingText(false);
         }
     };
+
+    const handleGenerateThumbnail = useCallback(async () => {
+        if (!post) return;
+        setGeneratingThumbnail(true);
+        setThumbnailError(null);
+
+        try {
+            const res = await fetch('/api/generate-thumbnail', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ postId: post.id }),
+            });
+            const result = await res.json();
+
+            if (!res.ok) {
+                const detail = Array.isArray(result.attempts) && result.attempts.length > 0
+                    ? ` (${result.attempts.join(' | ')})`
+                    : '';
+                throw new Error((result.error || 'Thumbnail generation failed') + detail);
+            }
+
+            await refreshPost(post.id);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Thumbnail generation failed';
+            setThumbnailError(message);
+        } finally {
+            setGeneratingThumbnail(false);
+        }
+    }, [post, refreshPost]);
+
+    useEffect(() => {
+        if (!post) return;
+        const textReady = post.status === 'generated' || post.status === 'published';
+        if (!textReady || post.thumbnail_url || generatingThumbnail) return;
+        if (autoThumbnailAttemptedRef.current[post.id]) return;
+
+        autoThumbnailAttemptedRef.current[post.id] = true;
+        void handleGenerateThumbnail();
+    }, [post, generatingThumbnail, handleGenerateThumbnail]);
 
     if (authLoading || loading) {
         return (
@@ -148,6 +309,8 @@ export default function PostDetailPage() {
         { label: '나의 비평', value: post.critique },
         { label: '참고 자료', value: post.reference_materials },
         { label: '출처', value: post.sources },
+        { label: '썸네일 프롬프트', value: post.thumbnail_prompt },
+        { label: '썸네일 스타일', value: post.thumbnail_style },
     ].filter((f) => f.value);
 
     return (
@@ -212,57 +375,107 @@ export default function PostDetailPage() {
 
                     {/* Output Section */}
                     <section className="flex flex-col gap-4">
-                        <h2 className="text-xs font-medium text-white/30 uppercase tracking-wider">생성된 콘텐츠</h2>
+                        <h2 className="text-xs font-medium text-white/30 uppercase tracking-wider">생성 작업</h2>
 
-                        {/* Error Message */}
-                        {error && (
+                        {textError && (
                             <div className="rounded-xl bg-red-500/10 border border-red-500/20 p-4 text-red-400 text-sm">
-                                {error}
+                                텍스트 생성 오류: {textError}
                             </div>
                         )}
 
-                        {post.status === 'draft' && (
-                            <div className="rounded-2xl bg-[#252525] border border-white/[0.06] p-8 text-center">
-                                <div className="w-12 h-12 rounded-xl bg-[#22d3ee]/10 border border-[#22d3ee]/20 flex items-center justify-center mx-auto mb-4">
-                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-                                    </svg>
+                        {thumbnailError && (
+                            <div className="rounded-xl bg-amber-500/10 border border-amber-500/20 p-4 text-amber-300 text-sm">
+                                이미지 생성 오류: {thumbnailError}
+                            </div>
+                        )}
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="rounded-2xl bg-[#252525] border border-white/[0.06] p-5 flex flex-col gap-4">
+                                <div className="flex items-center justify-between">
+                                    <div className="text-sm text-white/80 font-semibold">텍스트 AI</div>
+                                    <span className={`text-xs px-2.5 py-1 rounded-full ${post.status === 'generating'
+                                        ? 'text-[#22d3ee] bg-[#22d3ee]/10'
+                                        : post.status === 'generated' || post.status === 'published'
+                                            ? 'text-emerald-400 bg-emerald-400/10'
+                                            : 'text-white/40 bg-white/[0.08]'
+                                        }`}>
+                                        {post.status === 'generating' ? '생성 중' : (post.status === 'generated' || post.status === 'published') ? '완료' : '대기'}
+                                    </span>
                                 </div>
-                                <p className="text-white/60 text-sm mb-4">
-                                    아직 AI가 글을 생성하지 않았습니다.
-                                </p>
+                                <p className="text-white/50 text-sm">블로그 제목, 요약, 본문을 생성합니다.</p>
                                 <button
-                                    onClick={handleGenerate}
-                                    disabled={generating}
-                                    className="px-6 py-2.5 rounded-xl bg-[#22d3ee] text-black text-sm font-semibold hover:bg-[#06b6d4] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                    onClick={handleGenerateText}
+                                    disabled={generatingText}
+                                    className="w-full px-4 py-2.5 rounded-xl bg-[#22d3ee] text-black text-sm font-semibold hover:bg-[#06b6d4] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
-                                    AI 글 생성하기
+                                    {generatingText ? '텍스트 생성 중...' : (post.status === 'generated' || post.status === 'published') ? '텍스트 다시 생성' : '텍스트 생성하기'}
                                 </button>
                             </div>
-                        )}
 
-                        {post.status === 'generating' && (
-                            <div className="rounded-2xl bg-[#252525] border border-[#22d3ee]/20 p-8 text-center">
-                                <div className="w-8 h-8 border-2 border-[#22d3ee]/30 border-t-[#22d3ee] rounded-full animate-spin mx-auto mb-4" />
-                                <p className="text-white/60 text-sm">AI가 블로그 글을 생성하고 있습니다...</p>
+                            <div className="rounded-2xl bg-[#252525] border border-white/[0.06] p-5 flex flex-col gap-4">
+                                <div className="flex items-center justify-between">
+                                    <div className="text-sm text-white/80 font-semibold">이미지 AI (Nanobanana)</div>
+                                    <span className={`text-xs px-2.5 py-1 rounded-full ${generatingThumbnail
+                                        ? 'text-[#22d3ee] bg-[#22d3ee]/10'
+                                        : post.thumbnail_url
+                                            ? 'text-emerald-400 bg-emerald-400/10'
+                                            : 'text-white/40 bg-white/[0.08]'
+                                        }`}>
+                                        {generatingThumbnail ? '생성 중' : post.thumbnail_url ? '완료' : '대기'}
+                                    </span>
+                                </div>
+                                <p className="text-white/50 text-sm">썸네일 이미지를 생성하고 저장합니다.</p>
+                                <button
+                                    onClick={handleGenerateThumbnail}
+                                    disabled={generatingThumbnail}
+                                    className="w-full px-4 py-2.5 rounded-xl bg-white/[0.08] text-white text-sm font-semibold hover:bg-white/[0.14] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    {generatingThumbnail ? '썸네일 생성 중...' : post.thumbnail_url ? '썸네일 다시 생성' : '썸네일 생성하기'}
+                                </button>
                             </div>
-                        )}
+                        </div>
 
-                        {(post.status === 'generated' || post.status === 'published') && post.content && (
-                            <div className="flex flex-col gap-4">
-                                {post.title && (
-                                    <h1 className="text-2xl font-bold text-white">{post.title}</h1>
-                                )}
-                                {post.summary && (
-                                    <p className="text-white/50 text-sm italic">{post.summary}</p>
-                                )}
-                                <div className="rounded-2xl bg-[#252525] border border-white/[0.06] p-6">
-                                    <div className="text-white/80 text-sm leading-[1.8] whitespace-pre-wrap">
-                                        {post.content}
+                        <h2 className="text-xs font-medium text-white/30 uppercase tracking-wider mt-2">생성된 콘텐츠</h2>
+                        <div className="flex flex-col gap-6">
+                            {post.thumbnail_url ? (
+                                <div className="rounded-2xl overflow-hidden border border-white/[0.06] bg-[#222222] aspect-square w-full max-w-[520px] mx-auto">
+                                    <img
+                                        src={post.thumbnail_url}
+                                        alt="AI Generated Thumbnail"
+                                        className="w-full h-full object-cover"
+                                    />
+                                </div>
+                            ) : (
+                                <div className="rounded-2xl border border-white/[0.06] bg-[#252525] aspect-square w-full max-w-[520px] mx-auto flex flex-col items-center justify-center gap-3 text-white/30">
+                                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                                        <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
+                                        <circle cx="9" cy="9" r="2" />
+                                        <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+                                    </svg>
+                                    <span className="text-sm">썸네일 이미지가 아직 생성되지 않았습니다</span>
+                                </div>
+                            )}
+
+                            {post.content ? (
+                                <div className="flex flex-col gap-4">
+                                    {post.title && (
+                                        <h1 className="text-2xl font-bold text-white">{post.title}</h1>
+                                    )}
+                                    {post.summary && (
+                                        <p className="text-white/50 text-sm italic">{post.summary}</p>
+                                    )}
+                                    <div className="rounded-2xl bg-[#252525] border border-white/[0.06] p-6">
+                                        <div className="flex flex-col gap-4 text-sm">
+                                            {renderMarkdown(post.content)}
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                        )}
+                            ) : (
+                                <div className="rounded-2xl border border-white/[0.06] bg-[#252525] p-6 text-sm text-white/40">
+                                    텍스트 콘텐츠가 아직 생성되지 않았습니다.
+                                </div>
+                            )}
+                        </div>
                     </section>
 
                     {/* Meta */}

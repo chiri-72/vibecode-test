@@ -1,0 +1,42 @@
+{
+  "version": "2.0",
+  "lastUpdated": "2026-02-17T06:45:00.000Z",
+  "activeFeatures": ["new-post-ux-redesign"],
+  "primaryFeature": "new-post-ux-redesign",
+  "features": {
+    "new-post-ux-redesign": {
+      "phase": "do",
+      "startedAt": "2026-02-17T06:00:00.000Z",
+      "lastActivity": "2026-02-17T06:45:00.000Z",
+      "planPath": "docs/01-plan/features/new-post-ux-redesign.plan.md",
+      "designPath": "docs/02-design/features/new-post-ux-redesign.design.md"
+    }
+  },
+  "pipeline": {
+    "currentPhase": 1,
+    "level": "Dynamic",
+    "phaseHistory": []
+  },
+  "session": {
+    "startedAt": "2026-02-17T05:14:32.466Z",
+    "onboardingCompleted": false,
+    "lastActivity": "2026-02-17T06:45:00.000Z"
+  },
+  "history": [
+    {
+      "action": "plan_created",
+      "feature": "new-post-ux-redesign",
+      "timestamp": "2026-02-17T06:00:00.000Z"
+    },
+    {
+      "action": "design_created",
+      "feature": "new-post-ux-redesign",
+      "timestamp": "2026-02-17T06:30:00.000Z"
+    },
+    {
+      "action": "do_completed",
+      "feature": "new-post-ux-redesign",
+      "timestamp": "2026-02-17T06:45:00.000Z"
+    }
+  ]
+}

@@ -2,17 +2,45 @@
 
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { createClient } from '@/lib/supabase/client';
 
 export default function DashboardPage() {
     const { user, loading, signOut } = useAuth();
     const router = useRouter();
+    const [postCount, setPostCount] = useState(0);
+    const [publishedCount, setPublishedCount] = useState(0);
+    const supabase = createClient();
 
     useEffect(() => {
         if (!loading && !user) {
             router.push('/auth');
         }
     }, [user, loading, router]);
+
+    // Fetch post counts
+    useEffect(() => {
+        if (!user) return;
+
+        const fetchCounts = async () => {
+            const { count: total } = await supabase
+                .from('posts')
+                .select('*', { count: 'exact', head: true })
+                .eq('user_id', user.id)
+                .in('status', ['generated', 'published']);
+
+            const { count: published } = await supabase
+                .from('posts')
+                .select('*', { count: 'exact', head: true })
+                .eq('user_id', user.id)
+                .eq('status', 'published');
+
+            setPostCount(total || 0);
+            setPublishedCount(published || 0);
+        };
+
+        fetchCounts();
+    }, [user]);
 
     if (loading) {
         return (
@@ -103,7 +131,7 @@ export default function DashboardPage() {
                     </div>
 
                     {/* My Posts */}
-                    <div className="col-span-1 row-span-1 rounded-2xl bg-[#222222] border border-white/[0.06] p-5 flex flex-col justify-between cursor-pointer hover:border-white/[0.12] transition-all duration-300">
+                    <div onClick={() => router.push('/dashboard/posts')} className="col-span-1 row-span-1 rounded-2xl bg-[#222222] border border-white/[0.06] p-5 flex flex-col justify-between cursor-pointer hover:border-white/[0.12] transition-all duration-300">
                         <div className="w-10 h-10 rounded-lg bg-white/[0.04] border border-white/[0.06] flex items-center justify-center">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" opacity="0.6">
                                 <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
@@ -113,7 +141,7 @@ export default function DashboardPage() {
                             </svg>
                         </div>
                         <div>
-                            <p className="text-2xl font-bold text-white">0</p>
+                            <p className="text-2xl font-bold text-white">{postCount}</p>
                             <p className="text-white/40 text-xs mt-1">내 글</p>
                         </div>
                     </div>
@@ -127,7 +155,7 @@ export default function DashboardPage() {
                             </svg>
                         </div>
                         <div>
-                            <p className="text-2xl font-bold text-white">0</p>
+                            <p className="text-2xl font-bold text-white">{publishedCount}</p>
                             <p className="text-white/40 text-xs mt-1">발행됨</p>
                         </div>
                     </div>

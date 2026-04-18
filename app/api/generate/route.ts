@@ -4,6 +4,43 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY!);
 
+type GeneratedContent = {
+    title: string;
+    summary: string;
+    content: string;
+};
+
+function parseGeneratedContent(rawText: string, fallbackPrompt: string): GeneratedContent {
+    const cleaned = rawText
+        .replace(/```json/gi, '```')
+        .replace(/```/g, '')
+        .trim();
+
+    const fallback: GeneratedContent = {
+        title: fallbackPrompt.slice(0, 50),
+        summary: '',
+        content: cleaned || fallbackPrompt,
+    };
+
+    try {
+        const start = cleaned.indexOf('{');
+        const end = cleaned.lastIndexOf('}');
+        if (start === -1 || end === -1 || end <= start) {
+            return fallback;
+        }
+
+        const parsed = JSON.parse(cleaned.slice(start, end + 1)) as Partial<GeneratedContent>;
+        return {
+            title: String(parsed.title || fallback.title).trim(),
+            summary: String(parsed.summary || '').trim(),
+            content: String(parsed.content || fallback.content).trim(),
+        };
+    } catch (error) {
+        console.error('JSON parsing failed:', error);
+        return fallback;
+    }
+}
+
 export async function POST(request: Request) {
     const supabase = await createClient();
 
@@ -59,26 +96,15 @@ export async function POST(request: Request) {
     if (post.sources) userPrompt += `\n출처: ${post.sources}`;
 
     try {
-        const model = genAI.getGenerativeModel({
+        // 텍스트 생성
+        const textModel = genAI.getGenerativeModel({
             model: 'gemini-2.5-flash',
             systemInstruction,
         });
 
-        const result = await model.generateContent(userPrompt);
-        const raw = result.response.text();
-
-        // JSON 파싱
-        let generated: { title: string; summary: string; content: string };
-        try {
-            const cleaned = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-            generated = JSON.parse(cleaned);
-        } catch {
-            generated = {
-                title: post.prompt.slice(0, 50),
-                summary: '',
-                content: raw,
-            };
-        }
+        const textResult = await textModel.generateContent(userPrompt);
+        const rawText = textResult.response.text();
+        const generated = parseGeneratedContent(rawText, post.prompt);
 
         // 결과 저장
         const { error: updateError } = await supabase
@@ -97,6 +123,7 @@ export async function POST(request: Request) {
 
         return NextResponse.json({ success: true, title: generated.title });
     } catch (err) {
+        console.error('Generation Process Error:', err);
         // 실패 시 draft로 롤백
         await supabase
             .from('posts')
